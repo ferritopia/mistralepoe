@@ -1,5 +1,5 @@
 import fastapi_poe as fp
-from mistralai import Mistral
+from openai import AsyncOpenAI
 import httpx
 import os
 import json
@@ -8,7 +8,10 @@ import sys
 class MistralBot(fp.PoeBot):
     def __init__(self):
         super().__init__()
-        self.client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
+        self.client = AsyncOpenAI(
+            api_key=os.environ["MISTRAL_API_KEY"],
+            base_url="https://api.mistral.ai/v1",
+        )
 
     async def web_search(self, query: str) -> str:
         async with httpx.AsyncClient() as http:
@@ -36,8 +39,10 @@ class MistralBot(fp.PoeBot):
         messages.append({
             "role": "system",
             "content": """You are a helpful assistant with access to web search.
+
 If the user asks about current events, recent news, prices, weather, or anything that requires up-to-date information, respond ONLY with this exact format:
 SEARCH: <your search query>
+
 Otherwise, answer directly without searching."""
         })
 
@@ -56,16 +61,16 @@ Otherwise, answer directly without searching."""
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
 
         # Panggil Mistral pertama kali
-        first_stream = self.client.chat.stream(
+        first_response = ""
+        stream = await self.client.chat.completions.create(
             model="ministral-8b-latest",
             messages=messages,
             temperature=0.7,
-            max_tokens=512,  # cukup kecil untuk deteksi SEARCH
+            max_tokens=512,
+            stream=True,
         )
-
-        first_response = ""
-        for chunk in first_stream:
-            delta = chunk.data.choices[0].delta.content
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content
             if delta:
                 first_response += delta
 
@@ -78,30 +83,25 @@ Otherwise, answer directly without searching."""
 
             search_results = await self.web_search(query)
 
-            # Inject hasil search ke messages
-            messages.append({
-                "role": "assistant",
-                "content": first_response
-            })
+            messages.append({"role": "assistant", "content": first_response})
             messages.append({
                 "role": "user",
                 "content": f"Here are the search results:\n\n{search_results}\n\nNow answer the original question based on these results."
             })
 
             # Panggil Mistral kedua kali dengan hasil search
-            second_stream = self.client.chat.stream(
+            stream2 = await self.client.chat.completions.create(
                 model="ministral-8b-latest",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=1024,
+                stream=True,
             )
-
-            for chunk in second_stream:
-                delta = chunk.data.choices[0].delta.content
+            async for chunk in stream2:
+                delta = chunk.choices[0].delta.content
                 if delta:
                     yield fp.PartialResponse(text=delta)
         else:
-            # Tidak perlu search, langsung stream ulang response
             yield fp.PartialResponse(text=first_response)
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
