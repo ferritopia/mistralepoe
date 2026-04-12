@@ -1,4 +1,4 @@
 fastapi-poe
-mistralai>=1.0.0
+mistralai==2.0.1
 httpx
 uvicorn
