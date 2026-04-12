@@ -93,7 +93,7 @@ Otherwise, answer directly without searching."""
                 model="ministral-8b-latest",
                 messages=messages,
                 temperature=0.7,
-                max_tokens=8192,
+                max_tokens=1024,
             )
 
             for chunk in second_stream:
