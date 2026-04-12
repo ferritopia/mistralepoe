@@ -1,4 +1,4 @@
 fastapi-poe
-mistralai==2.0.1
+openai
 httpx
 uvicorn
