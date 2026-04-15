@@ -63,10 +63,10 @@ Otherwise, answer directly without searching."""
         # Panggil Mistral pertama kali
         first_response = ""
         stream = await self.client.chat.completions.create(
-            model="ministral-8b-2512",
+            model="mistral-small-2603",
             messages=messages,
             temperature=0.7,
-            max_tokens=512,
+            max_tokens=1024,
             stream=True,
         )
         async for chunk in stream:
@@ -91,7 +91,7 @@ Otherwise, answer directly without searching."""
 
             # Panggil Mistral kedua kali dengan hasil search
             stream2 = await self.client.chat.completions.create(
-                model="ministral-8b-2512",
+                model="mistral-small-2603",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=1024,
