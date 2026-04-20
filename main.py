@@ -50,12 +50,49 @@ Otherwise, answer directly without searching."""
             role = msg.role
             if role == "bot":
                 role = "assistant"
-            messages.append({"role": role, "content": msg.content})
+
+            # Handle both text and image content
+            content_parts = []
+            if msg.content:
+                content_parts.append(msg.content)
+
+            # Process attachments (images)
+            if hasattr(msg, 'attachments') and msg.attachments:
+                for attachment in msg.attachments:
+                    if attachment.content_type.startswith('image/'):
+                        # Download the image from Poe's temporary URL
+                        async with httpx.AsyncClient() as client:
+                            image_response = await client.get(attachment.url)
+                            if image_response.status_code == 200:
+                                # Convert to base64 for Mistral API
+                                import base64
+                                base64_image = base64.b64encode(image_response.content).decode('utf-8')
+                                content_parts.append({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{attachment.content_type};base64,{base64_image}"
+                                    }
+                                })
+
+            # Format the message content
+            if content_parts:
+                # If we have both text and images, combine them
+                if len(content_parts) > 1:
+            messages.append({
+                        "role": role,
+                        "content": content_parts
+            })
+        else:
+                    # Single text message
+                    messages.append({
+                        "role": role,
+                        "content": content_parts[0]
+                    })
 
         # Batasi history
-        MAX_MESSAGES = 10
-        if len(messages) > MAX_MESSAGES + 1:
-            messages = [messages[0]] + messages[-MAX_MESSAGES:]
+        # MAX_MESSAGES = 10
+        # if len(messages) > MAX_MESSAGES + 1:
+        #     messages = [messages[0]] + messages[-MAX_MESSAGES:]
 
         print(f"Messages count: {len(messages)}", file=sys.stderr)
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
@@ -105,3 +142,4 @@ Otherwise, answer directly without searching."""
             yield fp.PartialResponse(text=first_response)
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
+
