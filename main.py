@@ -1,6 +1,7 @@
 import fastapi_poe as fp
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 import httpx
+import asyncio
 import os
 import json
 import sys
@@ -39,77 +40,57 @@ class MistralBot(fp.PoeBot):
         messages.append({
             "role": "system",
             "content": """You are a helpful assistant with access to web search.
-
 If the user asks about current events, recent news, prices, weather, or anything that requires up-to-date information, respond ONLY with this exact format:
 SEARCH: <your search query>
-
 Otherwise, answer directly without searching."""
         })
 
         for msg in request.query:
-            role = msg.role
-            if role == "bot":
-                role = "assistant"
+            role = "assistant" if msg.role == "bot" else msg.role
 
-            # Handle both text and image content
-            content_parts = []
-            if msg.content:
-                content_parts.append(msg.content)
-
-            # Process attachments (images)
-            if hasattr(msg, 'attachments') and msg.attachments:
+            # Handle attachment (gambar)
+            if msg.attachments:
+                content = []
+                if msg.content:
+                    content.append({"type": "text", "text": msg.content})
                 for attachment in msg.attachments:
-                    if attachment.content_type.startswith('image/'):
-                        # Download the image from Poe's temporary URL
-                        async with httpx.AsyncClient() as client:
-                            image_response = await client.get(attachment.url)
-                            if image_response.status_code == 200:
-                                # Convert to base64 for Mistral API
-                                import base64
-                                base64_image = base64.b64encode(image_response.content).decode('utf-8')
-                                content_parts.append({
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:{attachment.content_type};base64,{base64_image}"
-                                    }
-                                })
-
-            # Format the message content
-            if content_parts:
-                # If we have both text and images, combine them
-                if len(content_parts) > 1:
-            messages.append({
-                        "role": role,
-                        "content": content_parts
-            })
-        else:
-                    # Single text message
-                    messages.append({
-                        "role": role,
-                        "content": content_parts[0]
-                    })
-
-        # Batasi history
-        # MAX_MESSAGES = 10
-        # if len(messages) > MAX_MESSAGES + 1:
-        #     messages = [messages[0]] + messages[-MAX_MESSAGES:]
+                    if attachment.content_type and attachment.content_type.startswith("image/"):
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {"url": attachment.url}
+                        })
+                messages.append({"role": role, "content": content})
+            else:
+                messages.append({"role": role, "content": msg.content})
 
         print(f"Messages count: {len(messages)}", file=sys.stderr)
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
 
         # Panggil Mistral pertama kali
         first_response = ""
-        stream = await self.client.chat.completions.create(
-            model="mistral-small-2603",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1024,
-            stream=True,
-        )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                first_response += delta
+        MAX_RETRIES = 3
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                stream = await self.client.chat.completions.create(
+                    model="mistral-small-2603",
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1024,
+                    stream=True,
+                )
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        first_response += delta
+                break
+            except RateLimitError as e:
+                print(f"Rate limit (attempt {attempt + 1}): {e}", file=sys.stderr)
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(5)
+                else:
+                    yield fp.PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
+                    return
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
 
@@ -126,20 +107,27 @@ Otherwise, answer directly without searching."""
                 "content": f"Here are the search results:\n\n{search_results}\n\nNow answer the original question based on these results."
             })
 
-            # Panggil Mistral kedua kali dengan hasil search
-            stream2 = await self.client.chat.completions.create(
-                model="mistral-small-2603",
-                messages=messages,
-                temperature=0.7,
-                max_tokens=1024,
-                stream=True,
-            )
-            async for chunk in stream2:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield fp.PartialResponse(text=delta)
+            for attempt in range(MAX_RETRIES):
+                try:
+                    stream2 = await self.client.chat.completions.create(
+                        model="mistral-small-2603",
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=1024,
+                        stream=True,
+                    )
+                    async for chunk in stream2:
+                        delta = chunk.choices[0].delta.content
+                        if delta:
+                            yield fp.PartialResponse(text=delta)
+                    return
+                except RateLimitError as e:
+                    print(f"Rate limit search call (attempt {attempt + 1}): {e}", file=sys.stderr)
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(5)
+                    else:
+                        yield fp.PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
         else:
             yield fp.PartialResponse(text=first_response)
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
-
