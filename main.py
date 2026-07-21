@@ -110,7 +110,7 @@ Otherwise, answer directly without searching."""
             for attempt in range(MAX_RETRIES):
                 try:
                     stream2 = await self.client.chat.completions.create(
-                        model="mistral-small-2603",
+                        model="mistral-large-2512",
                         messages=messages,
                         temperature=0.7,
                         max_tokens=1024,
