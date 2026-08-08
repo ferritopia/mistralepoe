@@ -39,13 +39,13 @@ class MistralBot(fp.PoeBot):
     async def get_response(self, request: fp.QueryRequest):
         messages = []
         
-        now = datetime.now(ZoneInfo("Asia/Jakarta"))          # ← taruh di sini
-        current_time = now.strftime("%A, %d %B %Y, %H:%M %Z")  # ← tepat sebelum system promp
+        now = datetime.now(ZoneInfo("Asia/Jakarta"))          
+        current_time = now.strftime("%A, %d %B %Y, %H:%M %Z") 
 
         messages.append({
             "role": "system",
-            "content": """You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
-You will always try to figure out If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAIING DATA, then SEARCH FIRST BEFORE RESPOND, with this format:
+            "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
+You will always try to figure out If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, then SEARCH FIRST BEFORE RESPOND, with this format:
 SEARCH: <your search query>
 Otherwise, answer directly without searching."""
         })
