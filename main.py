@@ -52,8 +52,8 @@ class MistralBot(fp.PoeBot):
             "<html>"
             "<details style=\"background:#1e1e24;border:1px solid #33333d;border-radius:12px;padding:10px 14px;margin:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\">"
             "<summary style=\"cursor:pointer;list-style:none;font-weight:600;color:#c7c7d1;display:flex;align-items:center;gap:8px;\">"
-            "<span style=\"opacity:0.8;\">🧠</span>"
-            "<span>Thought &amp; searched the web</span>"
+            "<span style=\"opacity:0.8;\">💡</span>"
+            "<span>Thought &amp; search result</span>"
             "<span style=\"opacity:0.5;font-weight:400;font-size:13px;margin-left:auto;\">click to expand</span>"
             "</summary>"
             "<div style=\"margin-top:10px;padding-top:10px;border-top:1px solid #33333d;color:#b8b8c2;font-size:14px;\">"
@@ -61,7 +61,7 @@ class MistralBot(fp.PoeBot):
             f"<ul style=\"margin:0;padding-left:18px;\">{items}</ul>"
             "</div>"
             "</details>"
-            "</html>"
+            "</html>\n\n"
         )
 
     async def get_response(self, request: fp.QueryRequest):
