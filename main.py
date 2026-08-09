@@ -18,6 +18,10 @@ class MistralBot(fp.PoeBot):
             base_url="https://api.mistral.ai/v1",
         )
 
+    def _clean(self, text: str) -> str:
+        # Escape HTML lalu hilangkan newline (baris kosong = fatal untuk blok <html> di Poe)
+        return html.escape(text).replace("\n", " ").replace("\r", " ")
+
     async def web_search_raw(self, query: str) -> list:
         async with httpx.AsyncClient() as http:
             res = await http.post(
@@ -36,8 +40,8 @@ class MistralBot(fp.PoeBot):
         if results:
             items = "".join(
                 f"<li style=\"margin-bottom:8px;\">"
-                f"<a href=\"{html.escape(r['url'])}\" style=\"color:#7c9cff;text-decoration:none;font-weight:600;\">{html.escape(r['title'])}</a>"
-                f"<div style=\"opacity:0.75;font-size:13px;line-height:1.4;margin-top:2px;\">{html.escape(r['content'][:300])}</div>"
+                f"<a href=\"{self._clean(r['url'])}\" style=\"color:#7c9cff;text-decoration:none;font-weight:600;\">{self._clean(r['title'])}</a>"
+                f"<div style=\"opacity:0.75;font-size:13px;line-height:1.4;margin-top:2px;\">{self._clean(r['content'][:300])}</div>"
                 f"</li>"
                 for r in results
             )
@@ -53,7 +57,7 @@ class MistralBot(fp.PoeBot):
             "<span style=\"opacity:0.5;font-weight:400;font-size:13px;margin-left:auto;\">click to expand</span>"
             "</summary>"
             "<div style=\"margin-top:10px;padding-top:10px;border-top:1px solid #33333d;color:#b8b8c2;font-size:14px;\">"
-            f"<div style=\"opacity:0.7;margin-bottom:8px;\">Search query: <i>{html.escape(query)}</i></div>"
+            f"<div style=\"opacity:0.7;margin-bottom:8px;\">Search query: <i>{self._clean(query)}</i></div>"
             f"<ul style=\"margin:0;padding-left:18px;\">{items}</ul>"
             "</div>"
             "</details>"
@@ -69,9 +73,10 @@ class MistralBot(fp.PoeBot):
         messages.append({
             "role": "system",
             "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
-You will always try to figure out If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, then SEARCH FIRST BEFORE RESPOND, with this format:
+If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
+When you need to search, reply with ONLY a single line in this exact format and NOTHING ELSE:
 SEARCH: <your search query>
-Otherwise, answer directly without searching."""
+Do not add any explanation, answer, or extra text on that turn. Otherwise, answer directly without searching."""
         })
 
         for msg in request.query:
@@ -118,14 +123,16 @@ Otherwise, answer directly without searching."""
                 if attempt < MAX_RETRIES - 1:
                     await asyncio.sleep(5)
                 else:
-                    yield fp.PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
+                    yield fp. PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
                     return
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
 
         # Cek apakah model minta search
         if first_response.strip().startswith("SEARCH:"):
-            query = first_response.strip().replace("SEARCH:", "").strip()
+            # Ambil HANYA baris pertama sebagai query (buang sisa jawaban jika model bocor)
+            first_line = first_response.strip().split("\n")[0]
+            query = first_line.replace("SEARCH:", "").strip()
 
             results = await self.web_search_raw(query)
 
