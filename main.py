@@ -10,7 +10,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
-class MistralBot(fp.PoeBot):
+class MistralBot(fp. PoeBot):
     def __init__(self):
         super().__init__()
         self.client = AsyncOpenAI(
@@ -29,14 +29,14 @@ class MistralBot(fp.PoeBot):
                 json={
                     "api_key": os.environ["TAVILY_API_KEY"],
                     "query": query,
-                    "max_results": 3,
+                    "max_results": 5,
                     "search_depth": "basic"
                 },
                 timeout=10
             )
             return res.json().get("results", [])
 
-    def build_thinking_card(self, query: str, results: list) -> str:
+    def build_source_block(self, query: str, results: list) -> str:
         if results:
             items = "".join(
                 f"<li style=\"margin-bottom:8px;\">"
@@ -48,20 +48,22 @@ class MistralBot(fp.PoeBot):
         else:
             items = "<li style=\"opacity:0.7;\">No results found.</li>"
 
+        # \n\n di DEPAN: pemisah blok Markdown supaya kartu tidak nempel ke akhir jawaban.
         return (
+            "\n\n"
             "<html>"
             "<details style=\"background:#1e1e24;border:1px solid #33333d;border-radius:12px;padding:10px 14px;margin:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\">"
             "<summary style=\"cursor:pointer;list-style:none;font-weight:600;color:#c7c7d1;display:flex;align-items:center;gap:8px;\">"
-            "<span style=\"opacity:0.8;\">💡</span>"
-            "<span>Thought &amp; search result</span>"
+            "<span style=\"opacity:0.8;\">🔗</span>"
+            "<span>Web Search</span>"
             "<span style=\"opacity:0.5;font-weight:400;font-size:13px;margin-left:auto;\">click to expand</span>"
             "</summary>"
             "<div style=\"margin-top:10px;padding-top:10px;border-top:1px solid #33333d;color:#b8b8c2;font-size:14px;\">"
-            f"<div style=\"opacity:0.7;margin-bottom:8px;\">Search query: <i>{self._clean(query)}</i></div>"
+            f"<div style=\"opacity:0.7;margin-bottom:8px;\">Dicari: <i>{self._clean(query)}</i></div>"
             f"<ul style=\"margin:0;padding-left:18px;\">{items}</ul>"
             "</div>"
             "</details>"
-            "</html>\n\n"
+            "</html>"
         )
 
     async def get_response(self, request: fp.QueryRequest):
@@ -123,7 +125,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                 if attempt < MAX_RETRIES - 1:
                     await asyncio.sleep(5)
                 else:
-                    yield fp. PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
+                    yield fp.PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
                     return
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
@@ -135,9 +137,6 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
             query = first_line.replace("SEARCH:", "").strip()
 
             results = await self.web_search_raw(query)
-
-            # Emit the styled collapsible "thinking" card
-            yield fp.PartialResponse(text=self.build_thinking_card(query, results))
 
             # Rebuild flat results string to feed back into Mistral
             if results:
@@ -167,6 +166,9 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                         delta = chunk.choices[0].delta.content
                         if delta:
                             yield fp.PartialResponse(text=delta)
+
+                    # Jawaban selesai -> tampilkan blok sumber di BAWAH jawaban
+                    yield fp.PartialResponse(text=self.build_source_block(query, results))
                     return
                 except RateLimitError as e:
                     print(f"Rate limit search call (attempt {attempt + 1}): {e}", file=sys.stderr)
