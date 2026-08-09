@@ -5,8 +5,10 @@ import asyncio
 import os
 import json
 import sys
+import html
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
 
 class MistralBot(fp.PoeBot):
     def __init__(self):
@@ -16,7 +18,7 @@ class MistralBot(fp.PoeBot):
             base_url="https://api.mistral.ai/v1",
         )
 
-    async def web_search(self, query: str) -> str:
+    async def web_search_raw(self, query: str) -> list:
         async with httpx.AsyncClient() as http:
             res = await http.post(
                 "https://api.tavily.com/search",
@@ -28,19 +30,41 @@ class MistralBot(fp.PoeBot):
                 },
                 timeout=10
             )
-            results = res.json().get("results", [])
-            if not results:
-                return "No results found."
-            return "\n\n".join([
-                f"Source: {r['url']}\n{r['title']}\n{r['content']}"
+            return res.json().get("results", [])
+
+    def build_thinking_card(self, query: str, results: list) -> str:
+        if results:
+            items = "".join(
+                f"<li style=\"margin-bottom:8px;\">"
+                f"<a href=\"{html.escape(r['url'])}\" style=\"color:#7c9cff;text-decoration:none;font-weight:600;\">{html.escape(r['title'])}</a>"
+                f"<div style=\"opacity:0.75;font-size:13px;line-height:1.4;margin-top:2px;\">{html.escape(r['content'][:300])}</div>"
+                f"</li>"
                 for r in results
-            ])
+            )
+        else:
+            items = "<li style=\"opacity:0.7;\">No results found.</li>"
+
+        return (
+            "<html>"
+            "<details style=\"background:#1e1e24;border:1px solid #33333d;border-radius:12px;padding:10px 14px;margin:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\">"
+            "<summary style=\"cursor:pointer;list-style:none;font-weight:600;color:#c7c7d1;display:flex;align-items:center;gap:8px;\">"
+            "<span style=\"opacity:0.8;\">🧠</span>"
+            "<span>Thought &amp; searched the web</span>"
+            "<span style=\"opacity:0.5;font-weight:400;font-size:13px;margin-left:auto;\">click to expand</span>"
+            "</summary>"
+            "<div style=\"margin-top:10px;padding-top:10px;border-top:1px solid #33333d;color:#b8b8c2;font-size:14px;\">"
+            f"<div style=\"opacity:0.7;margin-bottom:8px;\">Search query: <i>{html.escape(query)}</i></div>"
+            f"<ul style=\"margin:0;padding-left:18px;\">{items}</ul>"
+            "</div>"
+            "</details>"
+            "</html>"
+        )
 
     async def get_response(self, request: fp.QueryRequest):
         messages = []
-        
-        now = datetime.now(ZoneInfo("Asia/Jakarta"))          
-        current_time = now.strftime("%A, %d %B %Y, %H:%M %Z") 
+
+        now = datetime.now(ZoneInfo("Asia/Jakarta"))
+        current_time = now.strftime("%A, %d %B %Y, %H:%M %Z")
 
         messages.append({
             "role": "system",
@@ -102,9 +126,20 @@ Otherwise, answer directly without searching."""
         # Cek apakah model minta search
         if first_response.strip().startswith("SEARCH:"):
             query = first_response.strip().replace("SEARCH:", "").strip()
-            yield fp.PartialResponse(text=f"🔍 Searching: *{query}*\n\n")
 
-            search_results = await self.web_search(query)
+            results = await self.web_search_raw(query)
+
+            # Emit the styled collapsible "thinking" card
+            yield fp.PartialResponse(text=self.build_thinking_card(query, results))
+
+            # Rebuild flat results string to feed back into Mistral
+            if results:
+                search_results = "\n\n".join(
+                    f"Source: {r['url']}\n{r['title']}\n{r['content']}"
+                    for r in results
+                )
+            else:
+                search_results = "No results found."
 
             messages.append({"role": "assistant", "content": first_response})
             messages.append({
@@ -134,5 +169,6 @@ Otherwise, answer directly without searching."""
                         yield fp.PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
         else:
             yield fp.PartialResponse(text=first_response)
+
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
