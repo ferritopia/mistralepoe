@@ -181,3 +181,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
 
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
