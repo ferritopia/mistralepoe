@@ -55,7 +55,7 @@ class MistralBot(fp. PoeBot):
             "<details style=\"background:#1e1e24;border:1px solid #33333d;border-radius:12px;padding:10px 14px;margin:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\">"
             "<summary style=\"cursor:pointer;list-style:none;font-weight:600;color:#c7c7d1;display:flex;align-items:center;gap:8px;\">"
             "<span style=\"opacity:0.8;\">🔗</span>"
-            "<span>Web Search</span>"
+            "<span>Sources</span>"
             "<span style=\"opacity:0.5;font-weight:400;font-size:13px;margin-left:auto;\">click to expand</span>"
             "</summary>"
             "<div style=\"margin-top:10px;padding-top:10px;border-top:1px solid #33333d;color:#b8b8c2;font-size:14px;\">"
@@ -109,7 +109,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
         for attempt in range(MAX_RETRIES):
             try:
                 stream = await self.client.chat.completions.create(
-                    model="mistral-large-latest",
+                    model="‎ministral-14b-latest",
                     messages=messages,
                     temperature=0.7,
                     max_tokens=2048,
@@ -156,7 +156,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
             for attempt in range(MAX_RETRIES):
                 try:
                     stream2 = await self.client.chat.completions.create(
-                        model="mistral-large-2512",
+                        model="mistral-medium-latest",
                         messages=messages,
                         temperature=0.7,
                         max_tokens=1024,
