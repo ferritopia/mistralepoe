@@ -112,7 +112,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                     model="mistral-large-latest",
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=1024,
+                    max_tokens=2048,
                     stream=True,
                 )
                 async for chunk in stream:
