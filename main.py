@@ -109,7 +109,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
         for attempt in range(MAX_RETRIES):
             try:
                 stream = await self.client.chat.completions.create(
-                    model="mistral-large-latest",
+                    model="glm-5-2",
                     messages=messages,
                     temperature=0.7,
                     max_tokens=2048,
