@@ -29,8 +29,8 @@ class MistralBot(fp. PoeBot):
                 json={
                     "api_key": os.environ["TAVILY_API_KEY"],
                     "query": query,
-                    "max_results": 5,
-                    "search_depth": "basic"
+                    "max_results": 10,
+                    "search_depth": "advance"
                 },
                 timeout=10
             )
@@ -109,7 +109,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
         for attempt in range(MAX_RETRIES):
             try:
                 stream = await self.client.chat.completions.create(
-                    model="glm-5-2",
+                    model="ministral-8b-2512",
                     messages=messages,
                     temperature=0.7,
                     max_tokens=2048,
@@ -156,7 +156,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
             for attempt in range(MAX_RETRIES):
                 try:
                     stream2 = await self.client.chat.completions.create(
-                        model="mistral-medium-latest",
+                        model="ministral-8b-2512",
                         messages=messages,
                         temperature=0.7,
                         max_tokens=2048,
