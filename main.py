@@ -42,7 +42,7 @@ class MistralBot(fp.PoeBot):
             data = res.json()
             return data.get("results", [])
 
-        async def searching_indicator(self, request, query: str) -> str:
+    async def searching_indicator(self, request, query: str) -> str:
         if SEARCHING_GIF_URL:
             try:
                 attachment = await self.post_message_attachment(
@@ -72,7 +72,6 @@ class MistralBot(fp.PoeBot):
         else:
             items = "<li style=\"opacity:0.7;\">No results found.</li>"
 
-        # \n\n di DEPAN: pemisah blok Markdown supaya kartu tidak nempel ke akhir jawaban.
         return (
             "\n\n"
             "<html>"
@@ -109,7 +108,6 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
         for msg in request.query:
             role = "assistant" if msg.role == "bot" else msg.role
 
-            # Handle attachment (gambar)
             if msg.attachments:
                 content = []
                 if msg.content:
@@ -127,10 +125,6 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
         print(f"Messages count: {len(messages)}", file=sys.stderr)
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
 
-        # Hit pertama: memutuskan search atau jawab langsung.
-        # Streaming langsung ke user (jawab-langsung terasa cepat).
-        # Teks awal dibiarkan tampil; kalau ternyata model menaruh SEARCH: di mana pun,
-        # kita lanjutkan mulus ke GIF -> jawaban -> source (tanpa menghapus teks awal).
         first_response = ""
         MAX_RETRIES = 3
 
@@ -142,7 +136,7 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
                     temperature=0.7,
                     max_tokens=2048,
                     stream=True,
-                    stop=["SEARCH:"],  # hentikan begitu model mulai menulis SEARCH:
+                    stop=["SEARCH:"],
                 )
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
@@ -160,11 +154,6 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
 
-        # Deteksi kebutuhan search:
-        # - stop sequence "SEARCH:" akan memotong output TEPAT sebelum kata SEARCH:.
-        # - finish_reason == "stop" karena stop-sequence artinya model mau search.
-        # Kita cek dua-duanya untuk aman: kalau output terpotong oleh stop sequence,
-        # atau (jaga-jaga) masih ada kata SEARCH: menyelip di teks.
         try:
             finish_reason = chunk.choices[0].finish_reason
         except Exception:
@@ -173,13 +162,10 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
         wants_search = (finish_reason == "stop" and not first_response.rstrip().endswith(("!", ".", "?"))) \
             or ("SEARCH:" in first_response)
 
-        # Ambil query. Karena stop sequence memotong SEBELUM "SEARCH:", teks query
-        # ada di lanjutan yang tidak ikut ter-stream. Kita minta ulang query secara ringkas.
         if not wants_search:
             return
 
         # ---- Alur SEARCH ----
-        # Minta model mengeluarkan HANYA query pencarian (tanpa teks lain).
         query = ""
         try:
             q_stream = await self.client.chat.completions.create(
@@ -198,17 +184,13 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
             print(f"Query gen failed: {e}", file=sys.stderr)
 
         if not query:
-            # fallback terakhir: pakai pesan user terakhir sebagai query
             last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
             query = last_user if isinstance(last_user, str) else "latest information"
 
-        # 1) Indikator "sedang mencari" (GIF, fallback teks).
         yield fp.PartialResponse(text=await self.searching_indicator(request, query))
 
-        # 2) Panggil Tavily DULU.
         results = await self.web_search_raw(query)
 
-        # 3) Susun hasil untuk dikirim balik ke Mistral.
         if results:
             search_results = "\n\n".join(
                 f"Source: {r['url']}\n{r['title']}\n{r['content']}"
