@@ -53,9 +53,9 @@ class MistralBot(fp.PoeBot):
                 return f"\n\n![searching][{attachment.inline_ref}]\n\n"
             except Exception as e:
                 print(f"GIF attach failed: {e}", file=sys.stderr)
-                return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
+                return f"\n\n🔎: *{query}*\n\n"
         else:
-            return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
+            return f"\n\n🔎: *{query}*\n\n"
 
     def build_source_block(self, query: str, results: list) -> str:
         if results:
@@ -96,7 +96,7 @@ class MistralBot(fp.PoeBot):
             "role": "system",
             "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
 If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
-When you need to search, your reply MUST be exactly one line in this format and NOTHING before or after it:
+When you need to search, your reply can search the web by using this format:
 SEARCH: <your search query>
 Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
         })
@@ -109,12 +109,19 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
                 if msg.content:
                     content.append({"type": "text", "text": msg.content})
                 for attachment in msg.attachments:
-                    if attachment.content_type and attachment.content_type.startswith("image/"):
+                    ct = attachment.content_type or ""
+                    # Kirim gambar statis saja ke Mistral. Skip GIF (termasuk GIF searching
+                    # kita sendiri dari turn sebelumnya) karena Mistral menolak animated GIF.
+                    if ct.startswith("image/") and ct != "image/gif":
                         content.append({
                             "type": "image_url",
                             "image_url": {"url": attachment.url}
                         })
-                messages.append({"role": role, "content": content})
+                # Kalau setelah filter tidak ada konten sama sekali, jangan kirim list kosong.
+                if content:
+                    messages.append({"role": role, "content": content})
+                elif msg.content:
+                    messages.append({"role": role, "content": msg.content})
             else:
                 messages.append({"role": role, "content": msg.content})
 
@@ -225,6 +232,7 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
 
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
+
 
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
