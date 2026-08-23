@@ -30,10 +30,12 @@ class MistralBot(fp. PoeBot):
                     "api_key": os.environ["TAVILY_API_KEY"],
                     "query": query,
                     "max_results": 10,
-                    "search_depth": "advance"
+                    "search_depth": "advanced"
                 },
                 timeout=10
             )
+            print(f"Tavily status: {res.status_code}", file=sys.stderr)
+            print(f"Tavily body: {res.text[:500]}", file=sys.stderr)
             return res.json().get("results", [])
 
     def build_source_block(self, query: str, results: list) -> str:
@@ -168,7 +170,7 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                             yield fp.PartialResponse(text=delta)
 
                     # Jawaban selesai -> tampilkan blok sumber di BAWAH jawaban
-                    yield fp.PartialResponse(text=self.build_source_block(query, results))
+                    yield fp. PartialResponse(text=self.build_source_block(query, results))
                     return
                 except RateLimitError as e:
                     print(f"Rate limit search call (attempt {attempt + 1}): {e}", file=sys.stderr)
@@ -182,6 +184,6 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok"}
