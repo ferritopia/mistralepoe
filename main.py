@@ -94,10 +94,11 @@ class MistralBot(fp.PoeBot):
 
         messages.append({
             "role": "system",
-            "content": f"""You are a helpful, time sensitive assistant. 
+            "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
 If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
-When you need to search, TELL the user that you are searching in ONE line only, NEVER inform your training data limitation. Search the web by using this format:
+When you need to search, your reply MUST be exactly one line in this format and NOTHING before or after it:
 SEARCH: <your search query>
+Do NOT write any answer, explanation, or preamble before SEARCH:. Stop immediately after the query.
 Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
         })
 
@@ -139,7 +140,6 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
                     temperature=0.7,
                     max_tokens=2048,
                     stream=True,
-                    stop=["SEARCH:"],
                 )
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
@@ -157,34 +157,17 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
 
-        try:
-            finish_reason = chunk.choices[0].finish_reason
-        except Exception:
-            finish_reason = None
-
-        wants_search = (finish_reason == "stop" and not first_response.rstrip().endswith(("!", ".", "?"))) \
-            or ("SEARCH:" in first_response)
-
-        if not wants_search:
+        # Cek apakah model minta search (SEARCH: bisa muncul di mana pun teks).
+        if "SEARCH:" not in first_response:
             return
 
         # ---- Alur SEARCH ----
+        # Ambil query dari baris yang berisi SEARCH: (langsung dari first_response, tanpa hit tambahan).
         query = ""
-        try:
-            q_stream = await self.client.chat.completions.create(
-                model="ministral-8b-2512",
-                messages=messages + [{
-                    "role": "user",
-                    "content": "Output ONLY the single best web search query for my last question. No prefix, no quotes, one line."
-                }],
-                temperature=0.3,
-                max_tokens=64,
-                stream=False,
-            )
-            query = q_stream.choices[0].message.content.strip().split("\n")[0]
-            query = query.replace("SEARCH:", "").strip().strip('"')
-        except Exception as e:
-            print(f"Query gen failed: {e}", file=sys.stderr)
+        for line in first_response.splitlines():
+            if "SEARCH:" in line:
+                query = line.split("SEARCH:", 1)[1].strip().strip('"')
+                break
 
         if not query:
             last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
