@@ -94,9 +94,9 @@ class MistralBot(fp.PoeBot):
 
         messages.append({
             "role": "system",
-            "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
+            "content": f"""You are a helpful, time sensitive assistant. 
 If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
-When you need to search,  write ONE short sentence max (or nothing). Search the web by using this format:
+When you need to search, tell the user that you are searching. Search the web by using this format:
 SEARCH: <your search query>
 Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
         })
