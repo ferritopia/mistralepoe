@@ -43,19 +43,19 @@ class MistralBot(fp.PoeBot):
             return data.get("results", [])
 
         async def searching_indicator(self, request, query: str) -> str:
-        if SEARCHING_GIF_URL:
-            try:
-                attachment = await self.post_message_attachment(
-                    message_id=request.message_id,
-                    download_url=SEARCHING_GIF_URL,
-                    is_inline=True,
-                )
-                return f"\n\n![searching][{attachment.inline_ref}]\n\n"
-            except Exception as e:
-                print(f"GIF attach failed: {e}", file=sys.stderr)
+            if SEARCHING_GIF_URL:
+                try:
+                    attachment = await self.post_message_attachment(
+                        message_id=request.message_id,
+                        download_url=SEARCHING_GIF_URL,
+                        is_inline=True,
+                    )
+                    return f"\n\n![searching][{attachment.inline_ref}]\n\n"
+                except Exception as e:
+                    print(f"GIF attach failed: {e}", file=sys.stderr)
+                    return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
+            else:
                 return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
-        else:
-            return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
 
     def build_source_block(self, query: str, results: list) -> str:
         if results:
