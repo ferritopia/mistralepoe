@@ -173,9 +173,9 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                 yield fp.PartialResponse(text=f"![searching]{attachment.inline_ref}\n\n")
             except Exception as e:
                 print(f"GIF attach failed: {e}", file=sys.stderr)
-                yield fp.PartialResponse(text=f"🔎 Mencari dulu soal: *{query}*\n\n")
+                yield fp.PartialResponse(text=f"🔎: *{query}*\n\n")
         else:
-            yield fp.PartialResponse(text=f"🔎 Mencari dulu soal: *{query}*\n\n")
+            yield fp.PartialResponse(text=f"🔎: *{query}*\n\n")
 
         # 2) Panggil Tavily DULU -> baru results ada.
         results = await self.web_search_raw(query)
