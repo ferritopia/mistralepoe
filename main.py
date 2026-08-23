@@ -42,6 +42,28 @@ class MistralBot(fp.PoeBot):
             data = res.json()
             return data.get("results", [])
 
+    async def searching_indicator(self, request, query: str) -> str:
+        # Kembalikan Markdown indikator "sedang mencari".
+        # Pakai GIF (di-host ulang oleh Poe) kalau ada; fallback teks kalau kosong/gagal.
+        if SEARCHING_GIF_URL:
+            try:
+                attachment = await self.post_message_attachment(
+                    message_id=request.message_id,
+                    download_url=SEARCHING_GIF_URL,
+                    is_inline=True,
+                )
+                ref = attachment.inline_ref
+                # inline_ref biasanya string polos (mis. "zMbKqOWh") -> WAJIB dibungkus kurung.
+                # Jaga-jaga kalau Poe sudah mengembalikan bentuk "(...)", jangan double-kurung.
+                if ref.startswith("(") and ref.endswith(")"):
+                    return f"\n\n![searching]{ref}\n\n"
+                return f"\n\n![searching]({ref})\n\n"
+            except Exception as e:
+                print(f"GIF attach failed: {e}", file=sys.stderr)
+                return f"\n\n🔎: *{query}*\n\n"
+        else:
+            return f"\n\n🔎: *{query}*\n\n"
+
     def build_source_block(self, query: str, results: list) -> str:
         if results:
             items = "".join(
@@ -82,9 +104,10 @@ class MistralBot(fp.PoeBot):
             "role": "system",
             "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
 If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
-When you need to search, reply with ONLY a single line in this exact format and NOTHING ELSE:
+When you need to search, your reply MUST be exactly one line in this format and NOTHING before or after it:
 SEARCH: <your search query>
-Do not add any explanation, answer, or extra text on that turn. Otherwise, answer directly without searching."""
+Do NOT write any answer, explanation, or preamble before SEARCH:. Stop immediately after the query.
+Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
         })
 
         for msg in request.query:
@@ -109,11 +132,10 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
 
         # Hit pertama: memutuskan search atau jawab langsung.
-        # Stream sambil "mengintip": tahan token sampai yakin ini SEARCH atau bukan.
+        # Streaming langsung ke user (jawab-langsung terasa cepat).
+        # Teks awal dibiarkan tampil; kalau ternyata model menaruh SEARCH: di mana pun,
+        # kita lanjutkan mulus ke GIF -> jawaban -> source (tanpa menghapus teks awal).
         first_response = ""
-        is_search = None
-        buffer = ""
-        MARKER = "SEARCH:"
         MAX_RETRIES = 3
 
         for attempt in range(MAX_RETRIES):
@@ -124,24 +146,12 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                     temperature=0.7,
                     max_tokens=2048,
                     stream=True,
+                    stop=["SEARCH:"],  # hentikan begitu model mulai menulis SEARCH:
                 )
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
-                    if not delta:
-                        continue
-                    first_response += delta
-
-                    if is_search is None:
-                        buffer += delta
-                        stripped = buffer.lstrip()
-                        if len(stripped) < len(MARKER) and MARKER.startswith(stripped):
-                            continue
-                        if stripped.startswith(MARKER):
-                            is_search = True
-                        else:
-                            is_search = False
-                            yield fp.PartialResponse(text=buffer)
-                    elif is_search is False:
+                    if delta:
+                        first_response += delta
                         yield fp.PartialResponse(text=delta)
                 break
             except RateLimitError as e:
@@ -154,30 +164,52 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
 
-        # Bukan search -> jawaban sudah di-stream di atas. Selesai.
-        if is_search is not True:
+        # Deteksi kebutuhan search:
+        # - stop sequence "SEARCH:" akan memotong output TEPAT sebelum kata SEARCH:.
+        # - finish_reason == "stop" karena stop-sequence artinya model mau search.
+        # Kita cek dua-duanya untuk aman: kalau output terpotong oleh stop sequence,
+        # atau (jaga-jaga) masih ada kata SEARCH: menyelip di teks.
+        try:
+            finish_reason = chunk.choices[0].finish_reason
+        except Exception:
+            finish_reason = None
+
+        wants_search = (finish_reason == "stop" and not first_response.rstrip().endswith(("!", ".", "?"))) \
+            or ("SEARCH:" in first_response)
+
+        # Ambil query. Karena stop sequence memotong SEBELUM "SEARCH:", teks query
+        # ada di lanjutan yang tidak ikut ter-stream. Kita minta ulang query secara ringkas.
+        if not wants_search:
             return
 
         # ---- Alur SEARCH ----
-        first_line = first_response.strip().split("\n")[0]
-        query = first_line.replace("SEARCH:", "").strip()
+        # Minta model mengeluarkan HANYA query pencarian (tanpa teks lain).
+        query = ""
+        try:
+            q_stream = await self.client.chat.completions.create(
+                model="ministral-8b-2512",
+                messages=messages + [{
+                    "role": "user",
+                    "content": "Output ONLY the single best web search query for my last question. No prefix, no quotes, one line."
+                }],
+                temperature=0.3,
+                max_tokens=64,
+                stream=False,
+            )
+            query = q_stream.choices[0].message.content.strip().split("\n")[0]
+            query = query.replace("SEARCH:", "").strip().strip('"')
+        except Exception as e:
+            print(f"Query gen failed: {e}", file=sys.stderr)
 
-        # 1) Indikator "sedang mencari" (GIF via Poe host, fallback teks).
-        if SEARCHING_GIF_URL:
-            try:
-                attachment = await self.post_message_attachment(
-                    message_id=request.message_id,
-                    download_url=SEARCHING_GIF_URL,
-                    is_inline=True,
-                )
-                yield fp.PartialResponse(text=f"![searching]{attachment.inline_ref}\n\n")
-            except Exception as e:
-                print(f"GIF attach failed: {e}", file=sys.stderr)
-                yield fp.PartialResponse(text=f"🔎: *{query}*\n\n")
-        else:
-            yield fp.PartialResponse(text=f"🔎: *{query}*\n\n")
+        if not query:
+            # fallback terakhir: pakai pesan user terakhir sebagai query
+            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+            query = last_user if isinstance(last_user, str) else "latest information"
 
-        # 2) Panggil Tavily DULU -> baru results ada.
+        # 1) Indikator "sedang mencari" (GIF, fallback teks).
+        yield fp.PartialResponse(text=await self.searching_indicator(request, query))
+
+        # 2) Panggil Tavily DULU.
         results = await self.web_search_raw(query)
 
         # 3) Susun hasil untuk dikirim balik ke Mistral.
@@ -189,7 +221,6 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
         else:
             search_results = "No results found."
 
-        messages.append({"role": "assistant", "content": first_response})
         messages.append({
             "role": "user",
             "content": f"Here are the search results:\n\n{search_results}\n\nNow answer the original question based on these results."
