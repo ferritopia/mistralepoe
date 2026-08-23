@@ -42,7 +42,7 @@ class MistralBot(fp.PoeBot):
             data = res.json()
             return data.get("results", [])
 
-    async def searching_indicator(self, request, query: str) -> str:
+        async def searching_indicator(self, request, query: str) -> str:
         if SEARCHING_GIF_URL:
             try:
                 attachment = await self.post_message_attachment(
@@ -50,10 +50,7 @@ class MistralBot(fp.PoeBot):
                     download_url=SEARCHING_GIF_URL,
                     is_inline=True,
                 )
-                # DIAGNOSTIK: lihat apa yang benar-benar dikembalikan Poe
-                print(f"inline_ref = {attachment.inline_ref!r}", file=sys.stderr)
-                print(f"attachment url = {getattr(attachment, 'url', None)!r}", file=sys.stderr)
-                return f"\n\n{attachment.inline_ref}\n\n"
+                return f"\n\n![searching][{attachment.inline_ref}]\n\n"
             except Exception as e:
                 print(f"GIF attach failed: {e}", file=sys.stderr)
                 return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
