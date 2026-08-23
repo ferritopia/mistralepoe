@@ -42,9 +42,7 @@ class MistralBot(fp.PoeBot):
             data = res.json()
             return data.get("results", [])
 
-    async def searching_indicator(self, request, query: str) -> str:
-        # Kembalikan Markdown indikator "sedang mencari".
-        # Pakai GIF (di-host ulang oleh Poe) kalau ada; fallback teks kalau kosong/gagal.
+        async def searching_indicator(self, request, query: str) -> str:
         if SEARCHING_GIF_URL:
             try:
                 attachment = await self.post_message_attachment(
@@ -52,17 +50,15 @@ class MistralBot(fp.PoeBot):
                     download_url=SEARCHING_GIF_URL,
                     is_inline=True,
                 )
-                ref = attachment.inline_ref
-                # inline_ref biasanya string polos (mis. "zMbKqOWh") -> WAJIB dibungkus kurung.
-                # Jaga-jaga kalau Poe sudah mengembalikan bentuk "(...)", jangan double-kurung.
-                if ref.startswith("(") and ref.endswith(")"):
-                    return f"\n\n![searching]{ref}\n\n"
-                return f"\n\n![searching]({ref})\n\n"
+                # DIAGNOSTIK: lihat apa yang benar-benar dikembalikan Poe
+                print(f"inline_ref = {attachment.inline_ref!r}", file=sys.stderr)
+                print(f"attachment url = {getattr(attachment, 'url', None)!r}", file=sys.stderr)
+                return f"\n\n{attachment.inline_ref}\n\n"
             except Exception as e:
                 print(f"GIF attach failed: {e}", file=sys.stderr)
-                return f"\n\n🔎: *{query}*\n\n"
+                return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
         else:
-            return f"\n\n🔎: *{query}*\n\n"
+            return f"\n\n🔎 Mencari dulu soal: *{query}*\n\n"
 
     def build_source_block(self, query: str, results: list) -> str:
         if results:
