@@ -98,7 +98,6 @@ class MistralBot(fp.PoeBot):
 If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
 When you need to search, your reply MUST be exactly one line in this format and NOTHING before or after it:
 SEARCH: <your search query>
-Do NOT write any answer, explanation, or preamble before SEARCH:. Stop immediately after the query.
 Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
         })
 
