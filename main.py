@@ -96,7 +96,7 @@ class MistralBot(fp.PoeBot):
             "role": "system",
             "content": f"""You are a helpful, time sensitive assistant. 
 If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
-When you need to search, tell the user that you are searching. Search the web by using this format:
+When you need to search, TELL the user that you are searching in ONE line only, NEVER inform your training data limitation. Search the web by using this format:
 SEARCH: <your search query>
 Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
         })
