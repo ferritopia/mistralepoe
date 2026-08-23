@@ -50,12 +50,12 @@ class MistralBot(fp.PoeBot):
                     download_url=SEARCHING_GIF_URL,
                     is_inline=True,
                 )
-                return f"\n\n![searching][{attachment.inline_ref}]\n\n*Searching: {query}*\n\n"
+                return f"\n\n![searching][{attachment.inline_ref}]\n\n"
             except Exception as e:
                 print(f"GIF attach failed: {e}", file=sys.stderr)
-                return f"\n\n🔎 *Searching: {query}*\n\n"
+                return "\n\n🔎\n\n"
         else:
-            return f"\n\n🔎 *Searching: {query}*\n\n"
+            return "\n\n🔎\n\n"
 
     def build_source_block(self, query: str, results: list) -> str:
         if results:
@@ -145,22 +145,13 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
                     delta = chunk.choices[0].delta.content
                     if not delta:
                         continue
-
-                    prev = first_response
                     first_response += delta
-
-                    # Selama belum ada SEARCH:, stream teks ke user (ocehan/jawab-langsung).
-                    if "SEARCH:" not in first_response:
-                        yield fp.PartialResponse(text=delta)
-                        continue
-
-                    # SEARCH: baru muncul di potongan ini. Tampilkan HANYA teks sebelum SEARCH:
-                    # yang belum terkirim (ocehan), lalu STOP. Baris SEARCH: mentah tidak ditampilkan.
-                    if "SEARCH:" not in prev:
-                        idx = first_response.find("SEARCH:")
-                        if idx > len(prev):
-                            yield fp.PartialResponse(text=first_response[len(prev):idx])
-                    break
+                    # Stream teks ke user (termasuk baris SEARCH: yang dibiarkan muncul).
+                    yield fp.PartialResponse(text=delta)
+                    # Begitu baris SEARCH: sudah lengkap (ada newline sesudahnya),
+                    # stop baca supaya model tidak lanjut mengarang jawaban sendiri.
+                    if "SEARCH:" in first_response and "\n" in first_response.split("SEARCH:", 1)[1]:
+                        break
                 break
             except RateLimitError as e:
                 print(f"Rate limit (attempt {attempt + 1}): {e}", file=sys.stderr)
