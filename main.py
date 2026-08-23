@@ -9,8 +9,11 @@ import html
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+# Isi dengan URL GIF kamu (mis. hasil upload ke poecdn). Kosongkan untuk fallback teks.
+SEARCHING_GIF_URL = "https://app.ferri.my.id/galery/catwalk-mini.gif"
 
-class MistralBot(fp. PoeBot):
+
+class MistralBot(fp.PoeBot):
     def __init__(self):
         super().__init__()
         self.client = AsyncOpenAI(
@@ -35,8 +38,8 @@ class MistralBot(fp. PoeBot):
                 timeout=10
             )
             print(f"Tavily status: {res.status_code}", file=sys.stderr)
-            print(f"Tavily body: {res.text[:500]}", file=sys.stderr)
-            return res.json().get("results", [])
+            data = res.json()
+            return data.get("results", [])
 
     def build_source_block(self, query: str, results: list) -> str:
         if results:
@@ -104,8 +107,14 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
         print(f"Messages count: {len(messages)}", file=sys.stderr)
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
 
-        # Panggil Mistral pertama kali
+        # Hit pertama: memutuskan search atau jawab langsung.
+        # Kita stream sambil "mengintip": tahan token sampai yakin ini SEARCH atau bukan.
+        # - Kalau ternyata jawab langsung -> gelontorkan token yang tertahan lalu stream sisanya (tanpa hit kedua).
+        # - Kalau ternyata SEARCH -> jangan tampilkan apa-apa, lanjut ke alur search.
         first_response = ""
+        is_search = None          # None = belum tahu, True/False = sudah diputuskan
+        buffer = ""               # penampung token awal sebelum keputusan
+        MARKER = "SEARCH:"
         MAX_RETRIES = 3
 
         for attempt in range(MAX_RETRIES):
@@ -119,8 +128,25 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                 )
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
-                    if delta:
-                        first_response += delta
+                    if not delta:
+                        continue
+                    first_response += delta
+
+                    if is_search is None:
+                        buffer += delta
+                        stripped = buffer.lstrip()
+                        # Belum cukup karakter untuk memutuskan & masih mungkin jadi "SEARCH:" -> tunggu.
+                        if len(stripped) < len(MARKER) and MARKER.startswith(stripped):
+                            continue
+                        if stripped.startswith(MARKER):
+                            is_search = True
+                            # jangan yield apa-apa; query diambil dari first_response nanti
+                        else:
+                            is_search = False
+                            yield fp.PartialResponse(text=buffer)  # jawab langsung: keluarkan yang tertahan
+                    elif is_search is False:
+                        yield fp.PartialResponse(text=delta)       # jawab langsung: stream sisanya
+                    # kalau is_search is True: diam, tampung di first_response saja
                 break
             except RateLimitError as e:
                 print(f"Rate limit (attempt {attempt + 1}): {e}", file=sys.stderr)
@@ -132,54 +158,70 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
 
-        # Cek apakah model minta search
-        if first_response.strip().startswith("SEARCH:"):
-            # Ambil HANYA baris pertama sebagai query (buang sisa jawaban jika model bocor)
-            first_line = first_response.strip().split("\n")[0]
-            query = first_line.replace("SEARCH:", "").strip()
+        # Kalau bukan search, jawaban sudah di-stream di atas. Selesai.
+        if is_search is not True:
+            return
 
-            results = await self.web_search_raw(query)
+        # ---- Alur SEARCH ----
+        # Ambil HANYA baris pertama sebagai query (buang sisa jawaban jika model bocor)
+        first_line = first_response.strip().split("\n")[0]
+        query = first_line.replace("SEARCH:", "").strip()
 
-            # Rebuild flat results string to feed back into Mistral
-            if results:
-                search_results = "\n\n".join(
-                    f"Source: {r['url']}\n{r['title']}\n{r['content']}"
-                    for r in results
+                # Indikator "sedang mencari".
+        # Pakai post_message_attachment supaya Poe yang host GIF-nya (anti-blokir).
+        if SEARCHING_GIF_URL:
+            try:
+                attachment = await self.post_message_attachment(
+                    message_id=request.message_id,
+                    download_url=SEARCHING_GIF_URL,
+                    is_inline=True,
                 )
-            else:
-                search_results = "No results found."
-
-            messages.append({"role": "assistant", "content": first_response})
-            messages.append({
-                "role": "user",
-                "content": f"Here are the search results:\n\n{search_results}\n\nNow answer the original question based on these results."
-            })
-
-            for attempt in range(MAX_RETRIES):
-                try:
-                    stream2 = await self.client.chat.completions.create(
-                        model="ministral-8b-2512",
-                        messages=messages,
-                        temperature=0.7,
-                        max_tokens=2048,
-                        stream=True,
-                    )
-                    async for chunk in stream2:
-                        delta = chunk.choices[0].delta.content
-                        if delta:
-                            yield fp.PartialResponse(text=delta)
-
-                    # Jawaban selesai -> tampilkan blok sumber di BAWAH jawaban
-                    yield fp. PartialResponse(text=self.build_source_block(query, results))
-                    return
-                except RateLimitError as e:
-                    print(f"Rate limit search call (attempt {attempt + 1}): {e}", file=sys.stderr)
-                    if attempt < MAX_RETRIES - 1:
-                        await asyncio.sleep(5)
-                    else:
-                        yield fp.PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
+                yield fp.PartialResponse(text=f"![searching]{attachment.inline_ref}\n\n")
+            except Exception as e:
+                # Kalau upload gagal (URL mati/diblok saat download), fallback ke teks.
+                print(f"GIF attach failed: {e}", file=sys.stderr)
+                yield fp.PartialResponse(text=f"🔎 Looking for: *{query}*\n\n")
         else:
-            yield fp.PartialResponse(text=first_response)
+            yield fp.PartialResponse(text=f"🔎 Looking for: *{query}*\n\n")
+
+        # Rebuild flat results string to feed back into Mistral
+        if results:
+            search_results = "\n\n".join(
+                f"Source: {r['url']}\n{r['title']}\n{r['content']}"
+                for r in results
+            )
+        else:
+            search_results = "No results found."
+
+        messages.append({"role": "assistant", "content": first_response})
+        messages.append({
+            "role": "user",
+            "content": f"Here are the search results:\n\n{search_results}\n\nNow answer the original question based on these results."
+        })
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                stream2 = await self.client.chat.completions.create(
+                    model="ministral-8b-2512",
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=2048,
+                    stream=True,
+                )
+                async for chunk in stream2:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield fp.PartialResponse(text=delta)
+
+                # Jawaban selesai -> tampilkan blok sumber di BAWAH jawaban
+                yield fp.PartialResponse(text=self.build_source_block(query, results))
+                return
+            except RateLimitError as e:
+                print(f"Rate limit search call (attempt {attempt + 1}): {e}", file=sys.stderr)
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(5)
+                else:
+                    yield fp.PartialResponse(text="❌ Server overloaded, coba lagi nanti.")
 
 
 app = fp.make_app(MistralBot(), access_key=os.environ["POE_ACCESS_KEY"])
