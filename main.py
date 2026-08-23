@@ -9,8 +9,9 @@ import html
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# Isi dengan URL GIF kamu (mis. hasil upload ke poecdn). Kosongkan untuk fallback teks.
-SEARCHING_GIF_URL = "https://app.ferri.my.id/galery/catwalk-mini.gif"
+# URL GIF indikator "sedang mencari". Poe akan download & host ulang (anti-blokir).
+# Kosongkan ("") untuk fallback ke teks.
+SEARCHING_GIF_URL = "https://pfst.cf2.poecdn.net/base/image/fcb344fbbc1d3f0aeecdbbd287f54dc6e613d00499f68b41ea20f58fc64752ab?w=53&h=40&pmaid=647951016"
 
 
 class MistralBot(fp.PoeBot):
@@ -108,12 +109,10 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
 
         # Hit pertama: memutuskan search atau jawab langsung.
-        # Kita stream sambil "mengintip": tahan token sampai yakin ini SEARCH atau bukan.
-        # - Kalau ternyata jawab langsung -> gelontorkan token yang tertahan lalu stream sisanya (tanpa hit kedua).
-        # - Kalau ternyata SEARCH -> jangan tampilkan apa-apa, lanjut ke alur search.
+        # Stream sambil "mengintip": tahan token sampai yakin ini SEARCH atau bukan.
         first_response = ""
-        is_search = None          # None = belum tahu, True/False = sudah diputuskan
-        buffer = ""               # penampung token awal sebelum keputusan
+        is_search = None
+        buffer = ""
         MARKER = "SEARCH:"
         MAX_RETRIES = 3
 
@@ -135,18 +134,15 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                     if is_search is None:
                         buffer += delta
                         stripped = buffer.lstrip()
-                        # Belum cukup karakter untuk memutuskan & masih mungkin jadi "SEARCH:" -> tunggu.
                         if len(stripped) < len(MARKER) and MARKER.startswith(stripped):
                             continue
                         if stripped.startswith(MARKER):
                             is_search = True
-                            # jangan yield apa-apa; query diambil dari first_response nanti
                         else:
                             is_search = False
-                            yield fp.PartialResponse(text=buffer)  # jawab langsung: keluarkan yang tertahan
+                            yield fp.PartialResponse(text=buffer)
                     elif is_search is False:
-                        yield fp.PartialResponse(text=delta)       # jawab langsung: stream sisanya
-                    # kalau is_search is True: diam, tampung di first_response saja
+                        yield fp.PartialResponse(text=delta)
                 break
             except RateLimitError as e:
                 print(f"Rate limit (attempt {attempt + 1}): {e}", file=sys.stderr)
@@ -158,17 +154,15 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
 
         print(f"First response: {first_response[:100]}", file=sys.stderr)
 
-        # Kalau bukan search, jawaban sudah di-stream di atas. Selesai.
+        # Bukan search -> jawaban sudah di-stream di atas. Selesai.
         if is_search is not True:
             return
 
         # ---- Alur SEARCH ----
-        # Ambil HANYA baris pertama sebagai query (buang sisa jawaban jika model bocor)
         first_line = first_response.strip().split("\n")[0]
         query = first_line.replace("SEARCH:", "").strip()
 
-                # Indikator "sedang mencari".
-        # Pakai post_message_attachment supaya Poe yang host GIF-nya (anti-blokir).
+        # 1) Indikator "sedang mencari" (GIF via Poe host, fallback teks).
         if SEARCHING_GIF_URL:
             try:
                 attachment = await self.post_message_attachment(
@@ -178,13 +172,15 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                 )
                 yield fp.PartialResponse(text=f"![searching]{attachment.inline_ref}\n\n")
             except Exception as e:
-                # Kalau upload gagal (URL mati/diblok saat download), fallback ke teks.
                 print(f"GIF attach failed: {e}", file=sys.stderr)
-                yield fp.PartialResponse(text=f"🔎 Looking for: *{query}*\n\n")
+                yield fp.PartialResponse(text=f"🔎 Mencari dulu soal: *{query}*\n\n")
         else:
-            yield fp.PartialResponse(text=f"🔎 Looking for: *{query}*\n\n")
+            yield fp.PartialResponse(text=f"🔎 Mencari dulu soal: *{query}*\n\n")
 
-        # Rebuild flat results string to feed back into Mistral
+        # 2) Panggil Tavily DULU -> baru results ada.
+        results = await self.web_search_raw(query)
+
+        # 3) Susun hasil untuk dikirim balik ke Mistral.
         if results:
             search_results = "\n\n".join(
                 f"Source: {r['url']}\n{r['title']}\n{r['content']}"
@@ -213,7 +209,6 @@ Do not add any explanation, answer, or extra text on that turn. Otherwise, answe
                     if delta:
                         yield fp.PartialResponse(text=delta)
 
-                # Jawaban selesai -> tampilkan blok sumber di BAWAH jawaban
                 yield fp.PartialResponse(text=self.build_source_block(query, results))
                 return
             except RateLimitError as e:
