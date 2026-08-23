@@ -50,12 +50,12 @@ class MistralBot(fp.PoeBot):
                     download_url=SEARCHING_GIF_URL,
                     is_inline=True,
                 )
-                return f"\n\n![searching][{attachment.inline_ref}]\n\n"
+                return f"\n\n![searching][{attachment.inline_ref}]\n\n*Searching: {query}*\n\n"
             except Exception as e:
                 print(f"GIF attach failed: {e}", file=sys.stderr)
-                return f"\n\n🔎: *{query}*\n\n"
+                return f"\n\n🔎 *Searching: {query}*\n\n"
         else:
-            return f"\n\n🔎: *{query}*\n\n"
+            return f"\n\n🔎 *Searching: {query}*\n\n"
 
     def build_source_block(self, query: str, results: list) -> str:
         if results:
@@ -130,6 +130,7 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
         print(f"Payload size: {len(json.dumps(messages))} bytes", file=sys.stderr)
 
         first_response = ""
+        search_triggered = False
         MAX_RETRIES = 3
 
         for attempt in range(MAX_RETRIES):
@@ -143,9 +144,23 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
                 )
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
-                    if delta:
-                        first_response += delta
+                    if not delta:
+                        continue
+                    first_response += delta
+
+                    # Belum ada SEARCH: -> ini jalur ngoceh/jawab-langsung, stream ke user.
+                    if "SEARCH:" not in first_response:
                         yield fp.PartialResponse(text=delta)
+                        continue
+
+                    # SEARCH: sudah muncul. Tampilkan potongan ini (masih bagian baris SEARCH:),
+                    # lalu STOP baca hit pertama supaya model tidak sempat mengarang jawaban.
+                    yield fp.PartialResponse(text=delta)
+                    # Query dianggap lengkap kalau sudah ada newline setelah SEARCH:, atau stream habis.
+                    after_marker = first_response.split("SEARCH:", 1)[1]
+                    if "\n" in after_marker:
+                        search_triggered = True
+                        break
                 break
             except RateLimitError as e:
                 print(f"Rate limit (attempt {attempt + 1}): {e}", file=sys.stderr)
