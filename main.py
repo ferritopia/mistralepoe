@@ -96,7 +96,7 @@ class MistralBot(fp.PoeBot):
             "role": "system",
             "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
 If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
-When you need to search, your reply can search the web by using this format:
+When you need to search, tell the user you have to search it first, if you need to explain before searching, explain briefly. Search the web by using this format:
 SEARCH: <your search query>
 Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
         })
