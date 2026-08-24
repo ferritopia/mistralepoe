@@ -95,11 +95,10 @@ class MistralBot(fp.PoeBot):
         messages.append({
             "role": "system",
             "content": f"""You are a helpful, time sensitive assistant. The current date and time is: {current_time}.
-If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first.
+If the user asks about current events, recent news, prices, weather, or anything that IS NOT IN YOUR TRAINING DATA, you must search first. So check if the answer can be supported by training data, if not then SEARCH.
 When you need to search, your reply MUST be exactly one line in this format and NOTHING before or after it:
 SEARCH: <your search query>
-Do NOT write any answer, explanation, or preamble before SEARCH:. Stop immediately after the query.
-Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:."""
+Otherwise (if no search is needed), answer directly without ever writing the word SEARCH:. DO NOT HALUCINATE OR INVENT ANY INFORMATION YOU DON NOT KNOW."""
         })
 
         for msg in request.query:
