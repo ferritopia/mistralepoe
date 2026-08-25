@@ -134,7 +134,7 @@ Otherwise (if no search is needed), answer directly without ever writing the wor
         for attempt in range(MAX_RETRIES):
             try:
                 stream = await self.client.chat.completions.create(
-                    model="ministral-8b-2512",
+                    model="mistral-medium-2505",
                     messages=messages,
                     temperature=0.7,
                     max_tokens=2048,
